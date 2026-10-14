@@ -191,8 +191,13 @@ function browserSpeak(text){
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     const v = speechSynthesis.getVoices();
-    u.voice = v.find(x => /daniel|arthur|george|british/i.test(x.name))
-           || v.find(x => x.lang === 'en-GB') || v[0];
+    // Português do Brasil primeiro; depois qualquer português; depois o padrão.
+    const ptBR = v.filter(x => /^pt[-_]BR$/i.test(x.lang));
+    u.voice = ptBR.find(x => /google|luciana|felipe|francisca|antonio|thalita/i.test(x.name))
+           || ptBR[0]
+           || v.find(x => /^pt/i.test(x.lang))
+           || v[0];
+    u.lang = (u.voice && u.voice.lang) || 'pt-BR';
     u.rate = 1.05; u.pitch = 0.95;
     document.body.classList.add('speaking');
     const done = () => { document.body.classList.remove('speaking'); resolve(); };
