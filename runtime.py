@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 
 # Session ids are UUIDs — anything else must never reach --resume, or the CLI
@@ -86,7 +87,8 @@ def build_command(message, session_id=None, system=None):
 # always an MCP server waiting on auth). Kill it and say so, instead of hanging.
 IDLE_TIMEOUT = int(os.environ.get("JARVIS_TIMEOUT", "45"))
 # raw transcript of the last claude run — for diagnosing "no response"
-RAW_LOG = os.environ.get("JARVIS_RAW_LOG", "/tmp/jarvis-claude-raw.log")
+RAW_LOG = os.environ.get("JARVIS_RAW_LOG",
+                         os.path.join(tempfile.gettempdir(), "jarvis-claude-raw.log"))
 
 
 # ─────────────────────────── real: Claude Code ───────────────────────────
@@ -96,6 +98,7 @@ def run_claude(message, session_id=None, system=None):
     import threading as _threading
 
     cmd = build_command(message, session_id, system)
+    cmd[0] = shutil.which("claude") or cmd[0]      # caminho completo (necessário no Windows)
     started = _mono_ms()
     first_text_at = None
 
@@ -261,6 +264,13 @@ def run(message, session_id=None, system=None):
         yield dict(t="error",
                    message="Claude Code isn't installed or isn't on PATH. "
                            "Install it, run `claude` once to log in, then restart.")
+        return
+    exe = (shutil.which("claude") or "").lower()
+    if os.name == "nt" and exe.endswith((".cmd", ".bat")):
+        yield dict(t="error",
+                   message="O claude encontrado é um atalho .cmd/.bat, e o Windows passaria "
+                           "o texto falado pelo cmd.exe (inseguro). Instale a versão nativa "
+                           "do Claude Code (claude.exe) e reinicie o Jarvis.")
         return
     try:
         produced = False

@@ -12,6 +12,7 @@ import mimetypes
 import os
 import pathlib
 import sys
+import tempfile
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
@@ -141,7 +142,7 @@ class Handler(BaseHTTPRequestHandler):
                 mime = self.headers.get("Content-Type", "audio/webm")
                 if os.environ.get("JARVIS_DEBUG") == "1":
                     # keep the last clip so "nothing transcribed" can be checked by ear
-                    with open("/tmp/jarvis-last-audio", "wb") as f:
+                    with open(os.path.join(tempfile.gettempdir(), "jarvis-last-audio"), "wb") as f:
                         f.write(raw)
                 return self._json({"text": voice.transcribe(raw, mime)})
             except Exception as e:                        # noqa: BLE001
