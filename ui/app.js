@@ -258,7 +258,7 @@ async function speak(text){
 // ── start / stop the whole conversation ──
 async function micToggle(){
   if (convo){ stopConvo(); return; }
-  if (!RT.stt){ log('error','VOICE','no ElevenLabs key — set one in .env'); return; }
+  if (!RT.stt){ return browserListenStart(); }      // sem chave: reconhecimento grátis do navegador
   const opts = {echoCancellation:true, noiseSuppression:true, autoGainControl:true};
   try {
     micStream = await navigator.mediaDevices.getUserMedia({audio:opts});
@@ -289,7 +289,59 @@ async function micToggle(){
   beginTurn();
 }
 
+/* Entrada de voz grátis: Web Speech API do navegador (Chrome/Edge), em pt-BR.
+   Funciona sem chave do ElevenLabs. Ouve uma frase, envia, o Jarvis responde e
+   fala, e só depois volta a ouvir (assim ele não escuta a própria voz). */
+let srec = null, sBusy = false;
+function browserListenStart(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR){
+    log('error','VOICE','este navegador não tem reconhecimento de voz — abra no Chrome ou no Edge, ou digite');
+    return;
+  }
+  convo = true; suppress = false; sBusy = false;
+  $('#mic').classList.add('on'); $('#mic').textContent = '● LIVE';
+  log('voice','VOICE','conversa aberta (reconhecimento do navegador) · ouvindo');
+  browserListen(SR);
+}
+function browserListen(SR){
+  if (!convo || sBusy) return;
+  srec = new SR();
+  srec.lang = 'pt-BR'; srec.interimResults = false;
+  srec.continuous = false; srec.maxAlternatives = 1;
+  let got = false;
+  setState('listening','LISTENING','listening…');
+  srec.onresult = async e => {
+    const text = (e.results[0]?.[0]?.transcript || '').trim();
+    if (!text) return;
+    got = true; sBusy = true;
+    log('voice','VOICE',`ouvi: "${text}"`);
+    const armed = $('#input').dataset.cmd || '';
+    const full = (armed ? armed + ' ' : '') + text;
+    $('#input').value = ''; disarm();
+    log('send','SEND',`auto-sent voice: ${full}`);
+    await transmit(full);                     // roda e fala, com o microfone parado
+    sBusy = false;
+    if (convo) browserListen(SR);
+  };
+  srec.onerror = e => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+      log('error','VOICE','microfone bloqueado — permita no cadeado da barra de endereço');
+      stopConvo();
+    } else if (e.error === 'network'){
+      log('error','VOICE','reconhecimento de voz sem internet — encerrando');
+      stopConvo();
+    }                                         // 'no-speech'/'aborted': só ouve de novo
+  };
+  srec.onend = () => {
+    if (convo && !got && !sBusy) setTimeout(() => browserListen(SR), 250);
+  };
+  try { srec.start(); } catch(_){}
+}
+
 function stopConvo(){
+  if (srec){ try{ srec.abort(); }catch(_){} srec = null; }
+  sBusy = false;
   convo = false; suppress = false;
   if (vad){ clearInterval(vad); vad=null; }
   if (recorder && recorder.state==='recording'){ recorder._cancel=true; try{recorder.stop();}catch(_){} }
@@ -512,7 +564,7 @@ setInterval(async () => {
     const port = location.port || '80';
     sys('gw', `online · :${port}`, 'ok');
     sys('brain', 'JARVIS Core', 'ok');
-    sys('voice', RT.tts ? 'ElevenLabs' : 'off', RT.tts ? '' : 'warn');
+    sys('voice', RT.tts ? 'ElevenLabs' : 'Navegador (grátis)', '');
     sys('profile', 'default');
     sys('session', s.session ? s.session.slice(0,8) : 'none');
     sys('clock', now());
@@ -520,12 +572,13 @@ setInterval(async () => {
     // header pills
     $('#p-gw').textContent = `Gateway: online ${location.origin}`;
     $('#p-voice').textContent = RT.tts
-      ? 'Voice: ElevenLabs STT / ElevenLabs TTS' : 'Voice: unavailable';
-    if (!RT.tts) $('#p-voice').previousElementSibling?.classList.replace('am','bad');
+      ? 'Voice: ElevenLabs STT / ElevenLabs TTS' : 'Voice: navegador (grátis)';
 
     log('status', 'BOOT',
         `gateway online · core ready · permission=${s.permission}`);
-    log('voice', 'VOICE', `channel ready — ElevenLabs STT / ElevenLabs TTS`);
+    log('voice', 'VOICE', RT.tts
+      ? 'channel ready — ElevenLabs STT / ElevenLabs TTS'
+      : 'canal pronto — voz e microfone do navegador (grátis)');
     setState('', 'STANDBY', 'awaiting uplink');
   } catch(e){
     sys('gw','offline','warn');
